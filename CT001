@@ -1,20 +1,20 @@
-Select Survey String
+Select String
 
 ↓
 
-Read every vertex
+Get_points()
+
+↓
+
+Loop through Get_3d_data()
 
 ↓
 
 Calculate
 
-Vertex Count
-
 Horizontal Length
 
 3D Length
-
-Chainage
 
 Bearing
 
@@ -24,8 +24,4 @@ Highest RL
 
 ↓
 
-Display Report
-
-↓
-
-(Optional CSV)
+Print Report
