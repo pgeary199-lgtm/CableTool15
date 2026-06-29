@@ -1,0 +1,30 @@
+CableTools15/
+│
+├── .gitignore
+├── README.md
+├── LICENSE
+├── CHANGELOG.md
+│
+├── docs/
+│   ├── UserGuide.md
+│   ├── DeveloperGuide.md
+│   └── Mathematics.md
+│
+├── include/
+│   ├── CT_Core.h
+│   ├── CT_Geometry.h
+│   ├── CT_Math.h
+│   ├── CT_Catenary.h
+│   ├── CT_Report.h
+│   └── CT_UI.h
+│
+├── macros/
+│   ├── CT_Test_Read_String.4dm
+│   ├── CT_Fit_Catenary.4dm
+│   └── CableTools_Menu.4dm
+│
+├── test_data/
+│   ├── SampleCable.12daz
+│   └── ExpectedResults.md
+│
+└── images/
