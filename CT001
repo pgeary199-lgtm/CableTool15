@@ -1,0 +1,361 @@
+/**********************************************************************
+
+    CableTool15
+
+    Tool
+        CT001_ReadSurveyString
+
+    Purpose
+        Reads a selected 12d string and reports the surveyed geometry.
+        This is the first foundation tool for the CableTool15 project.
+
+    Version
+        0.1.0
+
+    Target
+        12d Model Version 15
+
+    Authors
+        Peter Geary
+        OpenAI
+
+**********************************************************************/
+
+#include "set_ups.H"
+
+/**********************************************************************
+Function
+    CT_distance_2d
+
+Purpose
+    Calculates horizontal distance between two XY points.
+**********************************************************************/
+Real CT_distance_2d(Real x1, Real y1, Real x2, Real y2)
+{
+  Real dx = x2 - x1;
+  Real dy = y2 - y1;
+
+  return(Sqrt(dx*dx + dy*dy));
+}
+
+/**********************************************************************
+Function
+    CT_distance_3d
+
+Purpose
+    Calculates 3D distance between two XYZ points.
+**********************************************************************/
+Real CT_distance_3d(Real x1, Real y1, Real z1, Real x2, Real y2, Real z2)
+{
+  Real dx = x2 - x1;
+  Real dy = y2 - y1;
+  Real dz = z2 - z1;
+
+  return(Sqrt(dx*dx + dy*dy + dz*dz));
+}
+
+/**********************************************************************
+Function
+    CT_get_string_xyz
+
+Purpose
+    Reads XYZ from common 12d string types.
+
+Returns
+    TRUE  - point read successfully
+    FALSE - unsupported string type
+**********************************************************************/
+Integer CT_get_string_xyz(Element string, Text string_type, Integer point_no,
+                          Real &x, Real &y, Real &z)
+{
+  if(string_type == "2d") {
+
+    Get_2d_data(string,point_no,x,y);
+    z = 0.0;
+    return(TRUE);
+  }
+
+  if(string_type == "3d") {
+
+    Get_3d_data(string,point_no,x,y,z);
+    return(TRUE);
+  }
+
+  if(string_type == "4d") {
+
+    Text point_text;
+    Get_4d_data(string,point_no,x,y,z,point_text);
+    return(TRUE);
+  }
+
+  if(string_type == "Super") {
+
+    Real radius;
+    Integer flag;
+    Get_super_data(string,point_no,x,y,z,radius,flag);
+    return(TRUE);
+  }
+
+  if(string_type == "Polyline") {
+
+    Real radius;
+    Integer flag;
+    Get_polyline_data(string,point_no,x,y,z,radius,flag);
+    return(TRUE);
+  }
+
+  if(string_type == "Pipe") {
+
+    Get_pipe_data(string,point_no,x,y,z);
+    return(TRUE);
+  }
+
+  if(string_type == "Interface" || string_type == "Inteface") {
+
+    Integer flag;
+    Get_interface_data(string,point_no,x,y,z,flag);
+    return(TRUE);
+  }
+
+  return(FALSE);
+}
+
+/**********************************************************************
+Function
+    CT_print_line
+
+Purpose
+    Prints one formatted point report line.
+**********************************************************************/
+void CT_print_line(Integer point_no, Real x, Real y, Real z, Real chainage)
+{
+  Text line;
+
+  line = To_text(point_no,"%5ld") + "  " +
+         To_text(x       ,"%14.3lf") + "  " +
+         To_text(y       ,"%14.3lf") + "  " +
+         To_text(z       ,"%10.3lf") + "  " +
+         To_text(chainage,"%12.3lf");
+
+  Print(line);
+}
+
+/**********************************************************************
+Function
+    CT_report_string
+
+Purpose
+    Reads all vertices from a string and prints a geometry report.
+**********************************************************************/
+Integer CT_report_string(Element string, Message_Box message)
+{
+  Text string_name;
+  Text string_type;
+
+  Get_name(string,string_name);
+  Get_type(string,string_type);
+
+  Integer point_count;
+  Get_points(string,point_count);
+
+  if(point_count < 1) {
+    Set_data(message,"Selected string has no points.");
+    Print("CableTool15: selected string has no points.");
+    return(FALSE);
+  }
+
+  Real x,y,z;
+  Real previous_x, previous_y, previous_z;
+  Real first_x, first_y, first_z;
+  Real last_x, last_y, last_z;
+
+  Real chainage          = 0.0;
+  Real horizontal_length = 0.0;
+  Real length_3d         = 0.0;
+  Real lowest_z          = 0.0;
+  Real highest_z         = 0.0;
+  Real total_z           = 0.0;
+
+  Integer ok;
+
+  ok = CT_get_string_xyz(string,string_type,1,x,y,z);
+
+  if(ok != TRUE) {
+    Set_data(message,"Unsupported string type: " + string_type);
+    Print("CableTool15: unsupported string type: " + string_type);
+    return(FALSE);
+  }
+
+  first_x = x;
+  first_y = y;
+  first_z = z;
+
+  previous_x = x;
+  previous_y = y;
+  previous_z = z;
+
+  lowest_z  = z;
+  highest_z = z;
+  total_z   = z;
+
+  Print("");
+  Print("============================================================");
+  Print("CableTool15 - CT001 Read Survey String");
+  Print("Version 0.1.0");
+  Print("============================================================");
+  Print("String Name : " + string_name);
+  Print("String Type : " + string_type);
+  Print("Points      : " + To_text(point_count));
+  Print("");
+  Print("Point         Easting        Northing          RL      Chainage");
+  Print("------------------------------------------------------------");
+
+  CT_print_line(1,x,y,z,chainage);
+
+  for(Integer i=2;i<=point_count;i++) {
+
+    ok = CT_get_string_xyz(string,string_type,i,x,y,z);
+
+    if(ok != TRUE) {
+      Set_data(message,"Unable to read point " + To_text(i));
+      Print("CableTool15: unable to read point " + To_text(i));
+      return(FALSE);
+    }
+
+    Real segment_2d = CT_distance_2d(previous_x,previous_y,x,y);
+    Real segment_3d = CT_distance_3d(previous_x,previous_y,previous_z,x,y,z);
+
+    chainage          += segment_2d;
+    horizontal_length += segment_2d;
+    length_3d         += segment_3d;
+
+    if(z < lowest_z)  lowest_z  = z;
+    if(z > highest_z) highest_z = z;
+
+    total_z += z;
+
+    CT_print_line(i,x,y,z,chainage);
+
+    previous_x = x;
+    previous_y = y;
+    previous_z = z;
+  }
+
+  last_x = previous_x;
+  last_y = previous_y;
+  last_z = previous_z;
+
+  Real average_z = total_z / point_count;
+
+  Real bearing_rad = Atan2(last_y - first_y,last_x - first_x);
+  Real bearing_deg = bearing_rad * 180.0 / Pi();
+
+  if(bearing_deg < 0.0) bearing_deg += 360.0;
+
+  Real direct_span_2d = CT_distance_2d(first_x,first_y,last_x,last_y);
+  Real direct_span_3d = CT_distance_3d(first_x,first_y,first_z,last_x,last_y,last_z);
+
+  Print("------------------------------------------------------------");
+  Print("Horizontal length : " + To_text(horizontal_length,"%.3lf") + " m");
+  Print("3D length         : " + To_text(length_3d,"%.3lf") + " m");
+  Print("Direct span 2D    : " + To_text(direct_span_2d,"%.3lf") + " m");
+  Print("Direct span 3D    : " + To_text(direct_span_3d,"%.3lf") + " m");
+  Print("Bearing           : " + To_text(bearing_deg,"%.3lf") + " degrees");
+  Print("Lowest RL         : " + To_text(lowest_z,"%.3lf") + " m");
+  Print("Highest RL        : " + To_text(highest_z,"%.3lf") + " m");
+  Print("Average RL        : " + To_text(average_z,"%.3lf") + " m");
+  Print("============================================================");
+  Print("");
+
+  Set_data(message,"Report complete: " + To_text(point_count) + " points read.");
+
+  return(TRUE);
+}
+
+/**********************************************************************
+Function
+    CT001_manage_panel
+
+Purpose
+    Creates and manages the CT001 panel.
+**********************************************************************/
+void CT001_manage_panel()
+{
+  Panel panel = Create_panel("CableTool15 - Read Survey String");
+
+  Vertical_Group main_group = Create_vertical_group(0);
+  Set_border(main_group,"Survey String");
+
+  Message_Box message = Create_message_box("Select a surveyed string and press Read.");
+
+  Select_Box select_box = Create_select_box("&Survey string","Pick surveyed string",SELECT_STRING,message);
+  Append(select_box,main_group);
+
+  Horizontal_Group button_group = Create_button_group();
+  Set_border(button_group,"Processing");
+
+  Button read_button   = Create_button("&Read","read");
+  Button finish_button = Create_button("&Finish","finish");
+
+  Append(read_button,button_group);
+  Append(finish_button,button_group);
+
+  Append(main_group,panel);
+  Append(message,panel);
+  Append(button_group,panel);
+
+  Show_widget(panel);
+
+  Integer running = TRUE;
+
+  while(running) {
+
+    Integer id;
+    Text cmd;
+    Text msg;
+
+    Integer ret = Wait_on_widgets(id,cmd,msg);
+
+    if(cmd == "keystroke") continue;
+
+    switch(id) {
+
+      case Get_id(panel) : {
+
+        if(cmd == "Panel Quit") running = FALSE;
+      } break;
+
+      case Get_id(finish_button) : {
+
+        if(cmd == "finish") running = FALSE;
+      } break;
+
+      case Get_id(read_button) : {
+
+        Element selected_string;
+
+        Integer ierr = Validate(select_box,selected_string);
+
+        if(ierr != TRUE) {
+          Set_data(message,"Please select a string first.");
+          break;
+        }
+
+        CT_report_string(selected_string,message);
+
+      } break;
+    }
+  }
+}
+
+/**********************************************************************
+Function
+    main
+
+Purpose
+    Program entry point.
+**********************************************************************/
+void main()
+{
+  CT001_manage_panel();
+}
