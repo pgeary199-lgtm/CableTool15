@@ -1,0 +1,19 @@
+CT-020  Phase-to-Phase Sag Comparison
+
+Select fitted conductor A
+Select fitted conductor B
+Compare vertical separation along the span
+Report:
+- minimum phase separation
+- chainage of minimum separation
+- RL of both conductors
+- difference to required tolerance
+- PASS / FAIL
+
+Fit Phase A
+Fit Phase B
+Fit Phase C
+↓
+Compare phases
+↓
+Report tolerance compliance
