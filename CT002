@@ -1,25 +1,44 @@
-XYZ Survey
+========================================================
+CableTool15
+Survey Geometry Report
+Version 0.1.1
 
-↓
+Date:
+Time:
 
-Local Coordinate System
+--------------------------------------------------------
 
-↓
+Cable Name
 
-Initial Catenary Estimate
+Model
 
-↓
+Number of Survey Points
 
-Least Squares
+Horizontal Length
 
-↓
+3D Length
 
-Newton Solver
+Bearing
 
-↓
+Lowest RL
 
-Residual Analysis
+Highest RL
 
-↓
+Average RL
 
-Statistics
+--------------------------------------------------------
+
+Point   Easting      Northing      RL      Chainage
+
+1
+
+2
+
+3
+
+...
+
+--------------------------------------------------------
+
+End of Report
+========================================================
