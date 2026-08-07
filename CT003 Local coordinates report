@@ -1,0 +1,59 @@
+============================================================
+CableTool15 - From Survey to Confidence
+CT003 Local Coordinate Diagnostic Report
+Version 0.3.0
+============================================================
+
+String Name : CABLE REF
+String Type : Super
+Survey Pts  : 13
+
+Attachment A
+  Easting  : 371461.889
+  Northing : 5977334.858
+  RL       : 142.156
+
+Attachment B
+  Easting  : 371462.068
+  Northing : 5977114.803
+  RL       : 142.868
+
+Horizontal Span : 220.055 m
+Vertical Diff   : 0.712 m (B-A)
+Axis Angle      : 270.047 deg from +E axis
+
+Local coordinate convention:
+  Along = horizontal projection along Attachment A -> B
+  Offset = perpendicular horizontal offset (+ = left of A -> B)
+  Local Z = RL - Attachment A RL
+
+Point       Along(m)     Offset(m)    Local Z(m)        RL(m)
+------------------------------------------------------------
+    1         0.000         0.000         0.000       142.156
+    2         4.114        -0.002        -0.459       141.697
+    3        29.430        -0.005        -2.547       139.609
+    4        48.269        -0.011        -3.719       138.437
+    5        65.345        -0.015        -4.498       137.658
+    6        80.194        -0.025        -4.956       137.200
+    7        99.628        -0.034        -5.246       136.910
+    8       118.438        -0.038        -5.206       136.950
+    9       138.759        -0.031        -4.795       137.361
+   10       154.410        -0.027        -4.221       137.935
+   11       178.191        -0.017        -2.908       139.248
+   12       216.305        -0.012         0.275       142.431
+   13       220.055        -0.000         0.712       142.868
+------------------------------------------------------------
+
+Span Axis QA
+  Maximum absolute offset : 0.038 m
+  Offset RMS              : 0.021 m
+
+Lowest Surveyed Point
+  Point                   : 7
+  Along-chainage from A   : 99.628 m
+  Lateral offset          : -0.034 m
+  RL                      : 136.910 m
+
+CT004 solver input will use Along + RL values.
+No 12d elements are created or modified by this diagnostic trial.
+============================================================
