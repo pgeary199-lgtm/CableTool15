@@ -1,0 +1,72 @@
+============================================================
+CableTool15 - From Survey to Confidence
+CT004 True Catenary Solver - Prototype 2
+ENDPOINT-CONSTRAINED FIT
+Version 0.4.1
+============================================================
+
+String Name : CABLE REF
+String Type : Super
+Survey Pts  : 13
+
+Attachment A
+  Easting  : 371461.889
+  Northing : 5977334.858
+  RL       : 142.156
+
+Attachment B
+  Easting  : 371462.068
+  Northing : 5977114.803
+  RL       : 142.868
+
+Horizontal Span : 220.055 m
+Vertical Diff   : 0.712 m (B-A)
+
+CONSTRAINED VERTICAL CATENARY SOLUTION
+  Equation              : RL = z0 + a*(cosh((x-x0)/a)-1)
+  Catenary a            : 1075.085197 m
+  Lowest point chainage : 106.555112 m from Attachment A
+  Lowest point RL       : 136.871168 m
+  Chord RL at low point : 142.500765 m
+  Sag below chord       : 5.629597 m
+  Interior RMS residual : 0.025906 m
+
+ATTACHMENT CLOSURE
+  Attachment A closure  : 0.000000000 m
+  Attachment B closure  : 0.000000000 m
+
+Point       Along(m)       RL(m)      Fit RL(m)    Residual(m)    Offset(m)
+----------------------------------------------------------------------------
+    1         0.000       142.156       142.156        0.0000        0.000
+    2         4.114       141.697       141.755       -0.0585       -0.002
+    3        29.430       139.609       139.639       -0.0298       -0.005
+    4        48.269       138.437       138.452       -0.0146       -0.011
+    5        65.345       137.658       137.661       -0.0031       -0.015
+    6        80.194       137.200       137.194        0.0056       -0.025
+    7        99.628       136.910       136.893        0.0165       -0.034
+    8       118.438       136.950       136.937        0.0132       -0.038
+    9       138.759       137.361       137.354        0.0075       -0.031
+   10       154.410       137.935       137.936       -0.0014       -0.027
+   11       178.191       139.248       139.259       -0.0107       -0.017
+   12       216.305       142.431       142.478       -0.0469       -0.012
+   13       220.055       142.868       142.868       -0.0000       -0.000
+----------------------------------------------------------------------------
+
+FIT QA - INTERIOR OBSERVATIONS
+  Interior RMS residual : 0.025906 m
+  Maximum residual      : 0.058490 m
+  Maximum residual pt   : 2
+
+LATERAL OBSERVATION QA - NOT USED BY VERTICAL SOLVER
+  Maximum abs offset    : 0.038 m
+  Offset RMS            : 0.021 m
+  Note                  : smooth lateral movement may reflect wind.
+
+P2 engineering note:
+  Attachment A and B are treated as fixed known points.
+  Only interior observations drive the least-squares fit.
+  Lateral offsets remain observational and do not affect sag.
+
+Prototype 2 is report-only.
+No 12d elements are created or modified.
+============================================================
