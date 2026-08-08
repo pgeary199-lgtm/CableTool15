@@ -1,0 +1,62 @@
+============================================================
+CableTool15 - From Survey to Confidence
+CT004 True Catenary Solver - Prototype 1
+Version 0.4.0
+============================================================
+
+String Name : CABLE REF
+String Type : Super
+Survey Pts  : 13
+
+Attachment A
+  Easting  : 371461.889
+  Northing : 5977334.858
+  RL       : 142.156
+
+Attachment B
+  Easting  : 371462.068
+  Northing : 5977114.803
+  RL       : 142.868
+
+Horizontal Span : 220.055 m
+Vertical Diff   : 0.712 m (B-A)
+
+VERTICAL CATENARY SOLUTION
+  Equation              : RL = z0 + a*(cosh((x-x0)/a)-1)
+  Catenary a            : 1081.991714 m
+  Lowest point chainage : 106.484241 m from Attachment A
+  Lowest point RL       : 136.877294 m
+  Chord RL at low point : 142.500535 m
+  Sag below chord       : 5.623241 m
+  Vertical RMS residual : 0.016593 m
+
+Point       Along(m)       RL(m)      Fit RL(m)    Residual(m)    Offset(m)
+----------------------------------------------------------------------------
+    1         0.000       142.156       142.121        0.0347        0.000
+    2         4.114       141.697       141.724       -0.0267       -0.002
+    3        29.430       139.609       139.622       -0.0132       -0.005
+    4        48.269       138.437       138.444       -0.0068       -0.011
+    5        65.345       137.658       137.659       -0.0015       -0.015
+    6        80.194       137.200       137.197        0.0033       -0.025
+    7        99.628       136.910       136.899        0.0110       -0.034
+    8       118.438       136.950       136.943        0.0067       -0.038
+    9       138.759       137.361       137.359        0.0023       -0.031
+   10       154.410       137.935       137.939       -0.0039       -0.027
+   11       178.191       139.248       139.254       -0.0063       -0.017
+   12       216.305       142.431       142.455       -0.0244       -0.012
+   13       220.055       142.868       142.843        0.0248       -0.000
+----------------------------------------------------------------------------
+
+FIT QA
+  Vertical RMS residual : 0.016593 m
+  Maximum residual      : 0.034650 m
+  Maximum residual pt   : 1
+
+LATERAL OBSERVATION QA - NOT USED BY VERTICAL SOLVER
+  Maximum abs offset    : 0.038 m
+  Offset RMS            : 0.021 m
+  Note                  : smooth lateral movement may reflect wind.
+
+Prototype 1 is report-only.
+No 12d elements are created or modified.
+============================================================
