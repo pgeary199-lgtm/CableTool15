@@ -1,0 +1,661 @@
+/**********************************************************************
+
+    CableTool15
+
+    Tool
+        CT002_GeometryReport
+
+    Motto
+        From Survey to Confidence
+
+    Purpose
+        Reads a selected surveyed conductor string, calculates geometry
+        statistics, and writes a text report file.
+
+    Version
+        0.2.0
+
+    Target
+        12d Model Version 15
+        Compile with:
+            - Allow old string calls
+            - Allow old id calls
+
+    Authors
+        Peter Geary
+        Dev / OpenAI
+
+**********************************************************************/
+
+#include "set_ups.H"
+
+/**********************************************************************
+Function
+    CT_distance_2d
+
+Purpose
+    Calculates horizontal distance between two XY points.
+**********************************************************************/
+Real CT_abs(Real value)
+{
+  if(value < 0.0) return(-value);
+  return(value);
+}
+
+Real CT_distance_2d(Real x1, Real y1, Real x2, Real y2)
+{
+  Real dx = x2 - x1;
+  Real dy = y2 - y1;
+
+  return(Sqrt(dx*dx + dy*dy));
+}
+
+/**********************************************************************
+Function
+    CT_distance_3d
+
+Purpose
+    Calculates 3D distance between two XYZ points.
+**********************************************************************/
+Real CT_distance_3d(Real x1, Real y1, Real z1,
+                    Real x2, Real y2, Real z2)
+{
+  Real dx = x2 - x1;
+  Real dy = y2 - y1;
+  Real dz = z2 - z1;
+
+  return(Sqrt(dx*dx + dy*dy + dz*dz));
+}
+
+/**********************************************************************
+Function
+    CT_get_string_xyz
+
+Purpose
+    Reads XYZ from common 12d string types.
+
+Notes
+    This tool intentionally uses legacy string calls because they are
+    available in 12d Model V15 when compiled with:
+        Allow old string calls
+        Allow old id calls
+**********************************************************************/
+Integer CT_get_string_xyz(Element string, Text string_type, Integer point_no,
+                          Real &x, Real &y, Real &z)
+{
+  if(string_type == "2d") {
+
+    Get_2d_data(string,point_no,x,y);
+    z = 0.0;
+    return(TRUE);
+  }
+
+  if(string_type == "3d") {
+
+    Get_3d_data(string,point_no,x,y,z);
+    return(TRUE);
+  }
+
+  if(string_type == "4d") {
+
+    Text point_text;
+    Get_4d_data(string,point_no,x,y,z,point_text);
+    return(TRUE);
+  }
+
+  if(string_type == "Super") {
+
+    Real radius;
+    Integer flag;
+    Get_super_data(string,point_no,x,y,z,radius,flag);
+    return(TRUE);
+  }
+
+  if(string_type == "Polyline") {
+
+    Real radius;
+    Integer flag;
+    Get_polyline_data(string,point_no,x,y,z,radius,flag);
+    return(TRUE);
+  }
+
+  if(string_type == "Pipe") {
+
+    Get_pipe_data(string,point_no,x,y,z);
+    return(TRUE);
+  }
+
+  if(string_type == "Interface" || string_type == "Inteface") {
+
+    Integer flag;
+    Get_interface_data(string,point_no,x,y,z,flag);
+    return(TRUE);
+  }
+
+  return(FALSE);
+}
+
+/**********************************************************************
+Function
+    CT_write_report_line
+
+Purpose
+    Writes one line to the report file and to the output window.
+**********************************************************************/
+void CT_write_report_line(File file, Text line)
+{
+  File_write_line(file,line);
+  Print(line);
+}
+
+/**********************************************************************
+Function
+    CT_point_report_line
+
+Purpose
+    Creates one formatted point table line.
+**********************************************************************/
+Text CT_point_report_line(Integer point_no,
+                          Real x, Real y, Real z,
+                          Real chainage,
+                          Real segment_2d,
+                          Real segment_3d)
+{
+  Text line;
+
+  line = To_text(point_no,"%5ld") + "  " +
+         To_text(x         ,"%14.3lf") + "  " +
+         To_text(y         ,"%14.3lf") + "  " +
+         To_text(z         ,"%10.3lf") + "  " +
+         To_text(chainage  ,"%12.3lf") + "  " +
+         To_text(segment_2d,"%10.3lf") + "  " +
+         To_text(segment_3d,"%10.3lf");
+
+  return(line);
+}
+
+/**********************************************************************
+Function
+    CT_write_geometry_report
+
+Purpose
+    Reads the selected string, calculates geometry, and writes a report.
+**********************************************************************/
+
+/**********************************************************************
+Function
+    CT_catenary_rl
+
+Purpose
+    Evaluates the fitted vertical catenary.
+
+Equation
+    RL = z0 + a * (cosh((x-x0)/a) - 1)
+
+    x0 = chainage of the true lowest point
+    z0 = RL of the true lowest point
+**********************************************************************/
+Real CT_catenary_rl(Real x, Real a, Real x0, Real z0)
+{
+  return(z0 + a*(Cosh((x-x0)/a)-1.0));
+}
+
+/**********************************************************************
+Function
+    CT_fit_error
+
+Purpose
+    For a trial a and x0, calculates the optimum z0 and SSE.
+**********************************************************************/
+Real CT_fit_error(Element string, Text string_type, Integer point_count,
+                  Real ax, Real ay, Real ux, Real uy,
+                  Real a, Real x0, Real &z0)
+{
+  Real sum_z0 = 0.0;
+
+  for(Integer i=1;i<=point_count;i++) {
+    Real x,y,z;
+    Integer ok = CT_get_string_xyz(string,string_type,i,x,y,z);
+    if(ok != TRUE) return(1.0e30);
+
+    Real rx = x-ax;
+    Real ry = y-ay;
+    Real along = rx*ux + ry*uy;
+    Real shape = a*(Cosh((along-x0)/a)-1.0);
+
+    sum_z0 += z-shape;
+  }
+
+  z0 = sum_z0/point_count;
+
+  Real sse = 0.0;
+
+  for(Integer j=1;j<=point_count;j++) {
+    Real xj,yj,zj;
+    Integer okj = CT_get_string_xyz(string,string_type,j,xj,yj,zj);
+    if(okj != TRUE) return(1.0e30);
+
+    Real rxj = xj-ax;
+    Real ryj = yj-ay;
+    Real alongj = rxj*ux + ryj*uy;
+    Real fitted = CT_catenary_rl(alongj,a,x0,z0);
+    Real residual = zj-fitted;
+
+    sse += residual*residual;
+  }
+
+  return(sse);
+}
+
+/**********************************************************************
+Function
+    CT_write_solver_report
+
+Purpose
+    Fits a true vertical catenary to Along + RL observations.
+
+Notes
+    Prototype #1 is intentionally report-only.
+    Lateral offsets are retained and reported separately, but they do
+    NOT influence the vertical catenary solution.
+**********************************************************************/
+Integer CT_write_solver_report(Element string,
+                               Message_Box message,
+                               Text report_name)
+{
+  Text string_name;
+  Text string_type;
+  Get_name(string,string_name);
+  Get_type(string,string_type);
+
+  Integer point_count;
+  Get_points(string,point_count);
+
+  if(point_count < 5) {
+    Set_data(message,"CT004 P2 requires at least 5 surveyed points.");
+    return(FALSE);
+  }
+
+  Real ax,ay,az,bx,by,bz;
+  Integer ok = CT_get_string_xyz(string,string_type,1,ax,ay,az);
+  if(ok != TRUE) {
+    Set_data(message,"Unsupported string type: " + string_type);
+    return(FALSE);
+  }
+
+  ok = CT_get_string_xyz(string,string_type,point_count,bx,by,bz);
+  if(ok != TRUE) {
+    Set_data(message,"Unable to read Attachment B.");
+    return(FALSE);
+  }
+
+  Real dx = bx-ax;
+  Real dy = by-ay;
+  Real span = Sqrt(dx*dx + dy*dy);
+
+  if(span <= 0.0) {
+    Set_data(message,"Attachment A and B have the same horizontal position.");
+    return(FALSE);
+  }
+
+  Real ux = dx/span;
+  Real uy = dy/span;
+  Real vx = -uy;
+  Real vy = ux;
+
+  /*
+     Endpoint-constrained catenary.
+
+     For a trial 'a', the Attachment A/B elevations determine x0 exactly:
+
+       zB-zA = a[cosh((L-x0)/a)-cosh(x0/a)]
+
+     Using:
+       cosh(u-v)-cosh(u) =
+       cosh(u)(cosh(v)-1) - sinh(u)sinh(v)
+
+     Solve for u=x0/a:
+       A*cosh(u) - B*sinh(u) = delta/a
+
+     Rather than depend on inverse hyperbolic functions in 12d V15,
+     P2 solves x0 numerically for each trial a using bisection.
+
+     Once x0 is known:
+       z0 = zA - a*(cosh(x0/a)-1)
+
+     The search then chooses 'a' that minimises SSE of interior survey
+     observations. Attachments are fixed by definition and are not used
+     to drive the residual minimisation.
+  */
+
+  Real best_a = span*5.0;
+  Real best_x0 = span*0.5;
+  Real best_z0 = az;
+  Real best_sse = 1.0e30;
+
+  Real a_min = span*0.25;
+  Real a_max = span*20.0;
+
+  Integer passes = 6;
+
+  for(Integer pass=1;pass<=passes;pass++) {
+
+    Integer na = 100;
+    Real da = (a_max-a_min)/(na-1);
+
+    for(Integer ia=0;ia<na;ia++) {
+
+      Real trial_a = a_min + ia*da;
+      if(trial_a <= 0.0) continue;
+
+      /*
+         Solve x0 from the two attachment RLs.
+         Wide bounds permit the true low point to lie outside the span
+         for unusual attachment-height combinations.
+      */
+      Real lo = -span*10.0;
+      Real hi =  span*10.0;
+
+      for(Integer bi=1;bi<=80;bi++) {
+        Real mid = (lo+hi)*0.5;
+
+        Real fmid =
+          az + trial_a*(Cosh((span-mid)/trial_a)-Cosh(mid/trial_a)) - bz;
+
+        /*
+           f(x0) is monotonically decreasing for positive a and span.
+        */
+        if(fmid > 0.0)
+          lo = mid;
+        else
+          hi = mid;
+      }
+
+      Real trial_x0 = (lo+hi)*0.5;
+      Real trial_z0 =
+        az - trial_a*(Cosh(trial_x0/trial_a)-1.0);
+
+      Real trial_sse = 0.0;
+
+      for(Integer j=2;j<point_count;j++) {
+        Real xj,yj,zj;
+        Integer okj = CT_get_string_xyz(string,string_type,j,xj,yj,zj);
+        if(okj != TRUE) {
+          trial_sse = 1.0e30;
+          break;
+        }
+
+        Real rxj = xj-ax;
+        Real ryj = yj-ay;
+        Real alongj = rxj*ux + ryj*uy;
+        Real fitted =
+          CT_catenary_rl(alongj,trial_a,trial_x0,trial_z0);
+        Real residual = zj-fitted;
+
+        trial_sse += residual*residual;
+      }
+
+      if(trial_sse < best_sse) {
+        best_sse = trial_sse;
+        best_a = trial_a;
+        best_x0 = trial_x0;
+        best_z0 = trial_z0;
+      }
+    }
+
+    Real old_da = da;
+    a_min = best_a-old_da*2.0;
+    a_max = best_a+old_da*2.0;
+
+    if(a_min < span*0.05) a_min = span*0.05;
+  }
+
+  Integer interior_count = point_count-2;
+  Real rms = Sqrt(best_sse/interior_count);
+  Real max_abs_residual = 0.0;
+  Integer max_residual_point = 2;
+
+  Real max_abs_offset = 0.0;
+  Real sum_offset2 = 0.0;
+
+  Real chord_low_rl = az + (bz-az)*(best_x0/span);
+  Real sag_at_low = chord_low_rl-best_z0;
+
+  /*
+     Exact catenary arc length between Attachment A (x=0)
+     and Attachment B (x=span):
+
+       S = a * [sinh((span-x0)/a) + sinh(x0/a)]
+  */
+  Real fitted_cable_length =
+    best_a * (Sinh((span-best_x0)/best_a) + Sinh(best_x0/best_a));
+
+  Real straight_3d_span =
+    Sqrt(span*span + (bz-az)*(bz-az));
+
+  Real excess_over_straight =
+    fitted_cable_length - straight_3d_span;
+
+  /* Endpoint closure checks. */
+  Real fit_a = CT_catenary_rl(0.0,best_a,best_x0,best_z0);
+  Real fit_b = CT_catenary_rl(span,best_a,best_x0,best_z0);
+  Real closure_a = fit_a-az;
+  Real closure_b = fit_b-bz;
+
+  File report_file;
+  if(File_exists(report_name)) File_delete(report_name);
+  File_open(report_name,"w+","",report_file);
+
+  CT_write_report_line(report_file,"============================================================");
+  CT_write_report_line(report_file,"CableTool15 - From Survey to Confidence");
+  CT_write_report_line(report_file,"CT004 True Catenary Solver - Prototype 3");
+  CT_write_report_line(report_file,"ENDPOINT-CONSTRAINED FIT + CABLE LENGTH");
+  CT_write_report_line(report_file,"Version 0.4.2");
+  CT_write_report_line(report_file,"============================================================");
+  CT_write_report_line(report_file,"");
+  CT_write_report_line(report_file,"String Name : " + string_name);
+  CT_write_report_line(report_file,"String Type : " + string_type);
+  CT_write_report_line(report_file,"Survey Pts  : " + To_text(point_count));
+  CT_write_report_line(report_file,"");
+  CT_write_report_line(report_file,"Attachment A");
+  CT_write_report_line(report_file,"  Easting  : " + To_text(ax,"%.3lf"));
+  CT_write_report_line(report_file,"  Northing : " + To_text(ay,"%.3lf"));
+  CT_write_report_line(report_file,"  RL       : " + To_text(az,"%.3lf"));
+  CT_write_report_line(report_file,"");
+  CT_write_report_line(report_file,"Attachment B");
+  CT_write_report_line(report_file,"  Easting  : " + To_text(bx,"%.3lf"));
+  CT_write_report_line(report_file,"  Northing : " + To_text(by,"%.3lf"));
+  CT_write_report_line(report_file,"  RL       : " + To_text(bz,"%.3lf"));
+  CT_write_report_line(report_file,"");
+  CT_write_report_line(report_file,"Horizontal Span : " + To_text(span,"%.3lf") + " m");
+  CT_write_report_line(report_file,"Vertical Diff   : " + To_text(bz-az,"%.3lf") + " m (B-A)");
+  CT_write_report_line(report_file,"");
+  CT_write_report_line(report_file,"ATTACHMENT CONTROL");
+  CT_write_report_line(report_file,"  Attachment A          : FIXED TO SURVEY");
+  CT_write_report_line(report_file,"  Attachment B          : FIXED TO SURVEY");
+  CT_write_report_line(report_file,"  Interior fit points   : " + To_text(interior_count));
+  CT_write_report_line(report_file,"  Fit type              : ENDPOINT-CONSTRAINED TRUE CATENARY");
+  CT_write_report_line(report_file,"");
+  CT_write_report_line(report_file,"CONSTRAINED VERTICAL CATENARY SOLUTION");
+  CT_write_report_line(report_file,"  Equation              : RL = z0 + a*(cosh((x-x0)/a)-1)");
+  CT_write_report_line(report_file,"  Catenary a            : " + To_text(best_a,"%.6lf") + " m");
+  CT_write_report_line(report_file,"  Lowest point chainage : " + To_text(best_x0,"%.6lf") + " m from Attachment A");
+  CT_write_report_line(report_file,"  Lowest point RL       : " + To_text(best_z0,"%.6lf") + " m");
+  CT_write_report_line(report_file,"  Chord RL at low point : " + To_text(chord_low_rl,"%.6lf") + " m");
+  CT_write_report_line(report_file,"  Sag below chord       : " + To_text(sag_at_low,"%.6lf") + " m");
+  CT_write_report_line(report_file,"  Fitted cable length   : " + To_text(fitted_cable_length,"%.6lf") + " m");
+  CT_write_report_line(report_file,"  Straight 3D span      : " + To_text(straight_3d_span,"%.6lf") + " m");
+  CT_write_report_line(report_file,"  Excess cable length   : " + To_text(excess_over_straight,"%.6lf") + " m");
+  CT_write_report_line(report_file,"  Interior RMS residual : " + To_text(rms,"%.6lf") + " m");
+  CT_write_report_line(report_file,"");
+  CT_write_report_line(report_file,"ATTACHMENT CLOSURE");
+  CT_write_report_line(report_file,"  Attachment A closure  : " + To_text(closure_a,"%.9lf") + " m");
+  CT_write_report_line(report_file,"  Attachment B closure  : " + To_text(closure_b,"%.9lf") + " m");
+  CT_write_report_line(report_file,"");
+  CT_write_report_line(report_file,"Point       Along(m)       RL(m)      Fit RL(m)    Residual(m)    Offset(m)");
+  CT_write_report_line(report_file,"----------------------------------------------------------------------------");
+
+  for(Integer k=1;k<=point_count;k++) {
+    Real xk,yk,zk;
+    ok = CT_get_string_xyz(string,string_type,k,xk,yk,zk);
+
+    if(ok != TRUE) {
+      File_close(report_file);
+      Set_data(message,"Unable to read point " + To_text(k));
+      return(FALSE);
+    }
+
+    Real rxk = xk-ax;
+    Real ryk = yk-ay;
+    Real alongk = rxk*ux + ryk*uy;
+    Real offsetk = rxk*vx + ryk*vy;
+    Real fitk = CT_catenary_rl(alongk,best_a,best_x0,best_z0);
+    Real residualk = zk-fitk;
+    Real abs_residual = CT_abs(residualk);
+    Real abs_offset = CT_abs(offsetk);
+
+    if(k > 1 && k < point_count) {
+      if(abs_residual > max_abs_residual) {
+        max_abs_residual = abs_residual;
+        max_residual_point = k;
+      }
+    }
+
+    if(abs_offset > max_abs_offset) max_abs_offset = abs_offset;
+    sum_offset2 += offsetk*offsetk;
+
+    Text line = To_text(k,"%5ld") + "  " +
+                To_text(alongk,"%12.3lf") + "  " +
+                To_text(zk,"%12.3lf") + "  " +
+                To_text(fitk,"%12.3lf") + "  " +
+                To_text(residualk,"%12.4lf") + "  " +
+                To_text(offsetk,"%11.3lf");
+
+    CT_write_report_line(report_file,line);
+  }
+
+  Real offset_rms = Sqrt(sum_offset2/point_count);
+
+  CT_write_report_line(report_file,"----------------------------------------------------------------------------");
+  CT_write_report_line(report_file,"");
+  CT_write_report_line(report_file,"FIT QA - INTERIOR OBSERVATIONS");
+  CT_write_report_line(report_file,"  Interior RMS residual : " + To_text(rms,"%.6lf") + " m");
+  CT_write_report_line(report_file,"  Maximum residual      : " + To_text(max_abs_residual,"%.6lf") + " m");
+  CT_write_report_line(report_file,"  Maximum residual pt   : " + To_text(max_residual_point));
+  CT_write_report_line(report_file,"");
+  CT_write_report_line(report_file,"ENGINEERING SUMMARY");
+  CT_write_report_line(report_file,"  Lowest point chainage : " + To_text(best_x0,"%.3lf") + " m from Attachment A");
+  CT_write_report_line(report_file,"  Lowest point RL       : " + To_text(best_z0,"%.3lf") + " m");
+  CT_write_report_line(report_file,"  Sag below chord       : " + To_text(sag_at_low,"%.3lf") + " m");
+  CT_write_report_line(report_file,"  Fitted cable length   : " + To_text(fitted_cable_length,"%.3lf") + " m");
+  CT_write_report_line(report_file,"");
+  CT_write_report_line(report_file,"LATERAL OBSERVATION QA - NOT USED BY VERTICAL SOLVER");
+  CT_write_report_line(report_file,"  Maximum abs offset    : " + To_text(max_abs_offset,"%.3lf") + " m");
+  CT_write_report_line(report_file,"  Offset RMS            : " + To_text(offset_rms,"%.3lf") + " m");
+  CT_write_report_line(report_file,"  Note                  : smooth lateral movement may reflect wind.");
+  CT_write_report_line(report_file,"");
+  CT_write_report_line(report_file,"P3 engineering note:");
+  CT_write_report_line(report_file,"  Attachment A and B are treated as fixed known points.");
+  CT_write_report_line(report_file,"  Only interior observations drive the least-squares fit.");
+  CT_write_report_line(report_file,"  Lateral offsets remain observational and do not affect sag.");
+  CT_write_report_line(report_file,"");
+  CT_write_report_line(report_file,"Prototype 3 is report-only.");
+  CT_write_report_line(report_file,"No 12d elements are created or modified.");
+  CT_write_report_line(report_file,"============================================================");
+
+  File_flush(report_file);
+  File_close(report_file);
+
+  Set_data(message,"CT004 P3 constrained report written: " + report_name);
+  Print("CableTool15 CT004 P2 report written: " + report_name);
+
+  return(TRUE);
+}
+
+/**********************************************************************
+Function
+    CT004_manage_panel
+**********************************************************************/
+void CT004_manage_panel()
+{
+  Panel panel = Create_panel("CableTool15 - CT004 P3 Constrained Catenary");
+
+  Vertical_Group main_group = Create_vertical_group(0);
+  Set_border(main_group,"Survey String");
+
+  Message_Box message = Create_message_box(
+    "Select the surveyed conductor string and press Fit Catenary.");
+
+  Select_Box select_box = Create_select_box(
+    "&Survey string",
+    "Pick surveyed conductor string",
+    SELECT_STRING,
+    message);
+
+  Append(select_box,main_group);
+
+  Horizontal_Group button_group = Create_button_group();
+  Set_border(button_group,"Processing");
+
+  Button fit_button = Create_button("&Fit Catenary","fit");
+  Button finish_button = Create_button("&Finish","finish");
+
+  Append(fit_button,button_group);
+  Append(finish_button,button_group);
+
+  Append(main_group,panel);
+  Append(message,panel);
+  Append(button_group,panel);
+
+  Show_widget(panel);
+
+  Integer running = TRUE;
+
+  while(running) {
+
+    Integer id;
+    Text cmd;
+    Text msg;
+
+    Integer ret = Wait_on_widgets(id,cmd,msg);
+
+    if(cmd == "keystroke") continue;
+
+    switch(id) {
+
+      case Get_id(panel) : {
+        if(cmd == "Panel Quit") running = FALSE;
+      } break;
+
+      case Get_id(finish_button) : {
+        if(cmd == "finish") running = FALSE;
+      } break;
+
+      case Get_id(fit_button) : {
+
+        Element selected_string;
+        Integer ierr = Validate(select_box,selected_string);
+
+        if(ierr != TRUE) {
+          Set_data(message,"Please select a string first.");
+          break;
+        }
+
+        CT_write_solver_report(
+          selected_string,
+          message,
+          "CableTool15_CT004_P3_Constrained.rpt");
+
+      } break;
+    }
+  }
+}
+
+/**********************************************************************
+Function
+    main
+**********************************************************************/
+void main()
+{
+  CT004_manage_panel();
+}
