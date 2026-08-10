@@ -1,0 +1,825 @@
+/**********************************************************************
+
+    CableTool15
+
+    Tool
+        CT002_GeometryReport
+
+    Motto
+        From Survey to Confidence
+
+    Purpose
+        Reads a selected surveyed conductor string, calculates geometry
+        statistics, and writes a text report file.
+
+    Version
+        0.2.0
+
+    Target
+        12d Model Version 15
+        Compile with:
+            - Allow old string calls
+            - Allow old id calls
+
+    Authors
+        Peter Geary
+        Dev / OpenAI
+
+**********************************************************************/
+
+#include "set_ups.H"
+
+/**********************************************************************
+Function
+    CT_distance_2d
+
+Purpose
+    Calculates horizontal distance between two XY points.
+**********************************************************************/
+Real CT_abs(Real value)
+{
+  if(value < 0.0) return(-value);
+  return(value);
+}
+
+Real CT_distance_2d(Real x1, Real y1, Real x2, Real y2)
+{
+  Real dx = x2 - x1;
+  Real dy = y2 - y1;
+
+  return(Sqrt(dx*dx + dy*dy));
+}
+
+/**********************************************************************
+Function
+    CT_distance_3d
+
+Purpose
+    Calculates 3D distance between two XYZ points.
+**********************************************************************/
+Real CT_distance_3d(Real x1, Real y1, Real z1,
+                    Real x2, Real y2, Real z2)
+{
+  Real dx = x2 - x1;
+  Real dy = y2 - y1;
+  Real dz = z2 - z1;
+
+  return(Sqrt(dx*dx + dy*dy + dz*dz));
+}
+
+/**********************************************************************
+Function
+    CT_get_string_xyz
+
+Purpose
+    Reads XYZ from common 12d string types.
+
+Notes
+    This tool intentionally uses legacy string calls because they are
+    available in 12d Model V15 when compiled with:
+        Allow old string calls
+        Allow old id calls
+**********************************************************************/
+Integer CT_get_string_xyz(Element string, Text string_type, Integer point_no,
+                          Real &x, Real &y, Real &z)
+{
+  if(string_type == "2d") {
+
+    Get_2d_data(string,point_no,x,y);
+    z = 0.0;
+    return(TRUE);
+  }
+
+  if(string_type == "3d") {
+
+    Get_3d_data(string,point_no,x,y,z);
+    return(TRUE);
+  }
+
+  if(string_type == "4d") {
+
+    Text point_text;
+    Get_4d_data(string,point_no,x,y,z,point_text);
+    return(TRUE);
+  }
+
+  if(string_type == "Super") {
+
+    Real radius;
+    Integer flag;
+    Get_super_data(string,point_no,x,y,z,radius,flag);
+    return(TRUE);
+  }
+
+  if(string_type == "Polyline") {
+
+    Real radius;
+    Integer flag;
+    Get_polyline_data(string,point_no,x,y,z,radius,flag);
+    return(TRUE);
+  }
+
+  if(string_type == "Pipe") {
+
+    Get_pipe_data(string,point_no,x,y,z);
+    return(TRUE);
+  }
+
+  if(string_type == "Interface" || string_type == "Inteface") {
+
+    Integer flag;
+    Get_interface_data(string,point_no,x,y,z,flag);
+    return(TRUE);
+  }
+
+  return(FALSE);
+}
+
+/**********************************************************************
+Function
+    CT_write_report_line
+
+Purpose
+    Writes one line to the report file and to the output window.
+**********************************************************************/
+void CT_write_report_line(File file, Text line)
+{
+  File_write_line(file,line);
+  Print(line);
+}
+
+/**********************************************************************
+Function
+    CT_point_report_line
+
+Purpose
+    Creates one formatted point table line.
+**********************************************************************/
+Text CT_point_report_line(Integer point_no,
+                          Real x, Real y, Real z,
+                          Real chainage,
+                          Real segment_2d,
+                          Real segment_3d)
+{
+  Text line;
+
+  line = To_text(point_no,"%5ld") + "  " +
+         To_text(x         ,"%14.3lf") + "  " +
+         To_text(y         ,"%14.3lf") + "  " +
+         To_text(z         ,"%10.3lf") + "  " +
+         To_text(chainage  ,"%12.3lf") + "  " +
+         To_text(segment_2d,"%10.3lf") + "  " +
+         To_text(segment_3d,"%10.3lf");
+
+  return(line);
+}
+
+/**********************************************************************
+Function
+    CT_write_geometry_report
+
+Purpose
+    Reads the selected string, calculates geometry, and writes a report.
+**********************************************************************/
+
+/**********************************************************************
+Function
+    CT_catenary_rl
+
+Purpose
+    Evaluates the fitted vertical catenary.
+
+Equation
+    RL = z0 + a * (cosh((x-x0)/a) - 1)
+
+    x0 = chainage of the true lowest point
+    z0 = RL of the true lowest point
+**********************************************************************/
+Real CT_catenary_rl(Real x, Real a, Real x0, Real z0)
+{
+  return(z0 + a*(Cosh((x-x0)/a)-1.0));
+}
+
+/**********************************************************************
+Function
+    CT_fit_error
+
+Purpose
+    For a trial a and x0, calculates the optimum z0 and SSE.
+**********************************************************************/
+Real CT_fit_error(Element string, Text string_type, Integer point_count,
+                  Real ax, Real ay, Real ux, Real uy,
+                  Real a, Real x0, Real &z0)
+{
+  Real sum_z0 = 0.0;
+
+  for(Integer i=1;i<=point_count;i++) {
+    Real x,y,z;
+    Integer ok = CT_get_string_xyz(string,string_type,i,x,y,z);
+    if(ok != TRUE) return(1.0e30);
+
+    Real rx = x-ax;
+    Real ry = y-ay;
+    Real along = rx*ux + ry*uy;
+    Real shape = a*(Cosh((along-x0)/a)-1.0);
+
+    sum_z0 += z-shape;
+  }
+
+  z0 = sum_z0/point_count;
+
+  Real sse = 0.0;
+
+  for(Integer j=1;j<=point_count;j++) {
+    Real xj,yj,zj;
+    Integer okj = CT_get_string_xyz(string,string_type,j,xj,yj,zj);
+    if(okj != TRUE) return(1.0e30);
+
+    Real rxj = xj-ax;
+    Real ryj = yj-ay;
+    Real alongj = rxj*ux + ryj*uy;
+    Real fitted = CT_catenary_rl(alongj,a,x0,z0);
+    Real residual = zj-fitted;
+
+    sse += residual*residual;
+  }
+
+  return(sse);
+}
+
+/**********************************************************************
+Function
+    CT_write_solver_report
+
+Purpose
+    Fits a true vertical catenary to Along + RL observations.
+
+Notes
+    Prototype #1 is intentionally report-only.
+    Lateral offsets are retained and reported separately, but they do
+    NOT influence the vertical catenary solution.
+**********************************************************************/
+
+/**********************************************************************
+Function
+    CT_fit_constrained
+
+Purpose
+    Fit endpoint-constrained true vertical catenary to a surveyed string.
+
+Returns
+    span, attachment data, local span axis, a, x0, z0,
+    interior RMS and maximum interior residual.
+**********************************************************************/
+Integer CT_fit_constrained(Element string,
+                           Real &ax,Real &ay,Real &az,
+                           Real &bx,Real &by,Real &bz,
+                           Real &span,
+                           Real &ux,Real &uy,
+                           Real &best_a,Real &best_x0,Real &best_z0,
+                           Real &rms,Real &max_abs_residual)
+{
+  Text string_type;
+  Get_type(string,string_type);
+
+  Integer point_count;
+  Get_points(string,point_count);
+  if(point_count < 5) return(FALSE);
+
+  Integer ok = CT_get_string_xyz(string,string_type,1,ax,ay,az);
+  if(ok != TRUE) return(FALSE);
+
+  ok = CT_get_string_xyz(string,string_type,point_count,bx,by,bz);
+  if(ok != TRUE) return(FALSE);
+
+  Real dx = bx-ax;
+  Real dy = by-ay;
+  span = Sqrt(dx*dx + dy*dy);
+  if(span <= 0.0) return(FALSE);
+
+  ux = dx/span;
+  uy = dy/span;
+
+  best_a = span*5.0;
+  best_x0 = span*0.5;
+  best_z0 = az;
+  Real best_sse = 1.0e30;
+
+  Real a_min = span*0.25;
+  Real a_max = span*20.0;
+
+  Integer passes = 6;
+
+  for(Integer pass=1;pass<=passes;pass++) {
+    Integer na = 100;
+    Real da = (a_max-a_min)/(na-1);
+
+    for(Integer ia=0;ia<na;ia++) {
+      Real trial_a = a_min + ia*da;
+      if(trial_a <= 0.0) continue;
+
+      Real lo = -span*10.0;
+      Real hi =  span*10.0;
+
+      for(Integer bi=1;bi<=80;bi++) {
+        Real mid = (lo+hi)*0.5;
+
+        Real fmid =
+          az + trial_a*(Cosh((span-mid)/trial_a)-Cosh(mid/trial_a)) - bz;
+
+        if(fmid > 0.0)
+          lo = mid;
+        else
+          hi = mid;
+      }
+
+      Real trial_x0 = (lo+hi)*0.5;
+      Real trial_z0 =
+        az - trial_a*(Cosh(trial_x0/trial_a)-1.0);
+
+      Real trial_sse = 0.0;
+
+      for(Integer j=2;j<point_count;j++) {
+        Real xj,yj,zj;
+        Integer okj = CT_get_string_xyz(string,string_type,j,xj,yj,zj);
+        if(okj != TRUE) {
+          trial_sse = 1.0e30;
+          break;
+        }
+
+        Real rxj = xj-ax;
+        Real ryj = yj-ay;
+        Real alongj = rxj*ux + ryj*uy;
+        Real fitted = CT_catenary_rl(alongj,trial_a,trial_x0,trial_z0);
+        Real residual = zj-fitted;
+
+        trial_sse += residual*residual;
+      }
+
+      if(trial_sse < best_sse) {
+        best_sse = trial_sse;
+        best_a = trial_a;
+        best_x0 = trial_x0;
+        best_z0 = trial_z0;
+      }
+    }
+
+    Real old_da = da;
+    a_min = best_a-old_da*2.0;
+    a_max = best_a+old_da*2.0;
+    if(a_min < span*0.05) a_min = span*0.05;
+  }
+
+  Integer interior_count = point_count-2;
+  rms = Sqrt(best_sse/interior_count);
+
+  max_abs_residual = 0.0;
+
+  for(Integer k=2;k<point_count;k++) {
+    Real xk,yk,zk;
+    Integer okk = CT_get_string_xyz(string,string_type,k,xk,yk,zk);
+    if(okk != TRUE) return(FALSE);
+
+    Real rxk = xk-ax;
+    Real ryk = yk-ay;
+    Real alongk = rxk*ux + ryk*uy;
+    Real fitk = CT_catenary_rl(alongk,best_a,best_x0,best_z0);
+    Real abs_residual = CT_abs(zk-fitk);
+
+    if(abs_residual > max_abs_residual)
+      max_abs_residual = abs_residual;
+  }
+
+  return(TRUE);
+}
+
+
+/**********************************************************************
+Function
+    CT006_write_pair_result
+
+Purpose
+    Write one design-normalised midspan sag comparison between two
+    independently fitted conductors.
+**********************************************************************/
+void CT006_write_pair_result(File report_file,
+                             Text label_a,
+                             Text label_b,
+                             Real fitted_sag_a,
+                             Real fitted_sag_b,
+                             Real design_sag_a,
+                             Real design_sag_b,
+                             Real tolerance)
+{
+  CT_write_report_line(report_file,"");
+  CT_write_report_line(report_file,"  " + label_a + " vs " + label_b);
+
+  Real actual_diff = fitted_sag_b-fitted_sag_a;
+  CT_write_report_line(report_file,"    Actual sag difference " + label_b + "-" + label_a +
+    "   : " + To_text(actual_diff,"%+.3lf") + " m");
+
+  if(design_sag_a > 0.0 && design_sag_b > 0.0) {
+    Real expected_diff = design_sag_b-design_sag_a;
+    Real diff_expected = actual_diff-expected_diff;
+    Real abs_diff = CT_abs(diff_expected);
+
+    CT_write_report_line(report_file,"    Expected design difference : " +
+      To_text(expected_diff,"%+.3lf") + " m");
+    CT_write_report_line(report_file,"    Difference from expected   : " +
+      To_text(diff_expected,"%+.3lf") + " m");
+
+    if(tolerance > 0.0) {
+      CT_write_report_line(report_file,"    Entered tolerance          : +/-" +
+        To_text(tolerance,"%.3lf") + " m");
+
+      if(abs_diff <= tolerance) {
+        CT_write_report_line(report_file,"    Tolerance status           : WITHIN TOLERANCE");
+      }
+      else {
+        CT_write_report_line(report_file,"    Tolerance status           : OUTSIDE TOLERANCE");
+        CT_write_report_line(report_file,"    Outside tolerance by       : " +
+          To_text(abs_diff-tolerance,"%.3lf") + " m");
+      }
+    }
+    else {
+      CT_write_report_line(report_file,"    Tolerance status           : NOT ASSESSED");
+    }
+  }
+  else {
+    CT_write_report_line(report_file,"    Design comparison          : RAW COMPARISON ONLY");
+    CT_write_report_line(report_file,"    Tolerance status           : NOT ASSESSED");
+  }
+}
+
+/**********************************************************************
+Function
+    CT006_compare_three_strings
+
+Purpose
+    Fit three surveyed conductor strings independently and compare their
+    design-normalised midspan sag relationships pair-by-pair.
+
+Notes
+    Prototype 4A is intentionally report-only.
+    It compares A-B, B-C and A-C so stacked or side-by-side three-phase
+    arrangements can be trialled without assuming all three design sags
+    are equal.
+**********************************************************************/
+Integer CT006_compare_three_strings(Element string_a,
+                                    Element string_b,
+                                    Element string_c,
+                                    Message_Box message,
+                                    Text report_name,
+                                    Real design_sag_a,
+                                    Real design_sag_b,
+                                    Real design_sag_c,
+                                    Real tolerance)
+{
+  Text name_a,name_b,name_c;
+  Get_name(string_a,name_a);
+  Get_name(string_b,name_b);
+  Get_name(string_c,name_c);
+
+  Real aax,aay,aaz,abx,aby,abz,span_a,uax,uay;
+  Real aa,ax0,az0,rms_a,maxres_a;
+
+  Real bax,bay,baz,bbx,bby,bbz,span_b,ubx,uby;
+  Real ba,bx0,bz0,rms_b,maxres_b;
+
+  Real cax,cay,caz,cbx,cby,cbz,span_c,ucx,ucy;
+  Real ca,cx0,cz0,rms_c,maxres_c;
+
+  Integer oka = CT_fit_constrained(
+    string_a,
+    aax,aay,aaz,abx,aby,abz,
+    span_a,uax,uay,
+    aa,ax0,az0,
+    rms_a,maxres_a);
+
+  if(oka != TRUE) {
+    Set_data(message,"Unable to fit Survey String A.");
+    return(FALSE);
+  }
+
+  Integer okb = CT_fit_constrained(
+    string_b,
+    bax,bay,baz,bbx,bby,bbz,
+    span_b,ubx,uby,
+    ba,bx0,bz0,
+    rms_b,maxres_b);
+
+  if(okb != TRUE) {
+    Set_data(message,"Unable to fit Survey String B.");
+    return(FALSE);
+  }
+
+  Integer okc = CT_fit_constrained(
+    string_c,
+    cax,cay,caz,cbx,cby,cbz,
+    span_c,ucx,ucy,
+    ca,cx0,cz0,
+    rms_c,maxres_c);
+
+  if(okc != TRUE) {
+    Set_data(message,"Unable to fit Survey String C.");
+    return(FALSE);
+  }
+
+  Real amid_ch = span_a*0.5;
+  Real bmid_ch = span_b*0.5;
+  Real cmid_ch = span_c*0.5;
+
+  Real amid_fit_rl = CT_catenary_rl(amid_ch,aa,ax0,az0);
+  Real bmid_fit_rl = CT_catenary_rl(bmid_ch,ba,bx0,bz0);
+  Real cmid_fit_rl = CT_catenary_rl(cmid_ch,ca,cx0,cz0);
+
+  Real amid_chord_rl = aaz + (abz-aaz)*0.5;
+  Real bmid_chord_rl = baz + (bbz-baz)*0.5;
+  Real cmid_chord_rl = caz + (cbz-caz)*0.5;
+
+  Real amid_sag = amid_chord_rl-amid_fit_rl;
+  Real bmid_sag = bmid_chord_rl-bmid_fit_rl;
+  Real cmid_sag = cmid_chord_rl-cmid_fit_rl;
+
+  File report_file;
+  if(File_exists(report_name)) File_delete(report_name);
+  File_open(report_name,"w+","",report_file);
+
+  CT_write_report_line(report_file,"============================================================");
+  CT_write_report_line(report_file,"CableTool15 - From Survey to Confidence");
+  CT_write_report_line(report_file,"CT006 Three-Conductor Sag Comparison - Prototype 4A");
+  CT_write_report_line(report_file,"Version 0.7.0");
+  CT_write_report_line(report_file,"============================================================");
+  CT_write_report_line(report_file,"");
+  CT_write_report_line(report_file,"CONDUCTOR A : " + name_a);
+  CT_write_report_line(report_file,"CONDUCTOR B : " + name_b);
+  CT_write_report_line(report_file,"CONDUCTOR C : " + name_c);
+  CT_write_report_line(report_file,"");
+
+  CT_write_report_line(report_file,"FIT / SAG SUMMARY");
+  CT_write_report_line(report_file,"");
+  CT_write_report_line(report_file,"  CONDUCTOR A");
+  CT_write_report_line(report_file,"    Horizontal span       : " + To_text(span_a,"%.3lf") + " m");
+  CT_write_report_line(report_file,"    Lowest point chainage : " + To_text(ax0,"%.3lf") + " m");
+  CT_write_report_line(report_file,"    Midspan sag           : " + To_text(amid_sag,"%.3lf") + " m");
+  CT_write_report_line(report_file,"    Interior RMS residual : " + To_text(rms_a,"%.4lf") + " m");
+  CT_write_report_line(report_file,"    Maximum residual      : " + To_text(maxres_a,"%.4lf") + " m");
+  if(design_sag_a > 0.0) {
+    CT_write_report_line(report_file,"    Design sag            : " + To_text(design_sag_a,"%.3lf") + " m");
+    CT_write_report_line(report_file,"    Deviation from design : " +
+      To_text(amid_sag-design_sag_a,"%+.3lf") + " m");
+  }
+  else
+    CT_write_report_line(report_file,"    Design sag            : NOT ENTERED");
+
+  CT_write_report_line(report_file,"");
+  CT_write_report_line(report_file,"  CONDUCTOR B");
+  CT_write_report_line(report_file,"    Horizontal span       : " + To_text(span_b,"%.3lf") + " m");
+  CT_write_report_line(report_file,"    Lowest point chainage : " + To_text(bx0,"%.3lf") + " m");
+  CT_write_report_line(report_file,"    Midspan sag           : " + To_text(bmid_sag,"%.3lf") + " m");
+  CT_write_report_line(report_file,"    Interior RMS residual : " + To_text(rms_b,"%.4lf") + " m");
+  CT_write_report_line(report_file,"    Maximum residual      : " + To_text(maxres_b,"%.4lf") + " m");
+  if(design_sag_b > 0.0) {
+    CT_write_report_line(report_file,"    Design sag            : " + To_text(design_sag_b,"%.3lf") + " m");
+    CT_write_report_line(report_file,"    Deviation from design : " +
+      To_text(bmid_sag-design_sag_b,"%+.3lf") + " m");
+  }
+  else
+    CT_write_report_line(report_file,"    Design sag            : NOT ENTERED");
+
+  CT_write_report_line(report_file,"");
+  CT_write_report_line(report_file,"  CONDUCTOR C");
+  CT_write_report_line(report_file,"    Horizontal span       : " + To_text(span_c,"%.3lf") + " m");
+  CT_write_report_line(report_file,"    Lowest point chainage : " + To_text(cx0,"%.3lf") + " m");
+  CT_write_report_line(report_file,"    Midspan sag           : " + To_text(cmid_sag,"%.3lf") + " m");
+  CT_write_report_line(report_file,"    Interior RMS residual : " + To_text(rms_c,"%.4lf") + " m");
+  CT_write_report_line(report_file,"    Maximum residual      : " + To_text(maxres_c,"%.4lf") + " m");
+  if(design_sag_c > 0.0) {
+    CT_write_report_line(report_file,"    Design sag            : " + To_text(design_sag_c,"%.3lf") + " m");
+    CT_write_report_line(report_file,"    Deviation from design : " +
+      To_text(cmid_sag-design_sag_c,"%+.3lf") + " m");
+  }
+  else
+    CT_write_report_line(report_file,"    Design sag            : NOT ENTERED");
+
+  CT_write_report_line(report_file,"");
+  CT_write_report_line(report_file,"DESIGN-NORMALISED PAIR COMPARISONS");
+  CT_write_report_line(report_file,"  Basis: fitted MIDSPAN SAG relative to each conductor's own design sag.");
+  CT_write_report_line(report_file,"  Pair checks are A-B, B-C and A-C.");
+
+  CT006_write_pair_result(report_file,
+    "A","B",
+    amid_sag,bmid_sag,
+    design_sag_a,design_sag_b,
+    tolerance);
+
+  CT006_write_pair_result(report_file,
+    "B","C",
+    bmid_sag,cmid_sag,
+    design_sag_b,design_sag_c,
+    tolerance);
+
+  CT006_write_pair_result(report_file,
+    "A","C",
+    amid_sag,cmid_sag,
+    design_sag_a,design_sag_c,
+    tolerance);
+
+  CT_write_report_line(report_file,"");
+  CT_write_report_line(report_file,"ENGINEERING NOTE");
+  CT_write_report_line(report_file,"  Prototype 4A is a sag-relationship trial.");
+  CT_write_report_line(report_file,"  It does not replace CT006 P3 true 3D spatial-separation reporting.");
+  CT_write_report_line(report_file,"  Each conductor is fitted independently with the existing endpoint-constrained solver.");
+  CT_write_report_line(report_file,"");
+  CT_write_report_line(report_file,"============================================================");
+
+  File_flush(report_file);
+  File_close(report_file);
+
+  Set_data(message,"CT006 three-conductor report written: " + report_name);
+  Print("CableTool15 CT006 three-conductor report written: " + report_name);
+
+  return(TRUE);
+}
+
+/**********************************************************************
+Function
+    CT006_manage_panel
+**********************************************************************/
+void CT006_manage_panel()
+{
+  Panel panel = Create_panel("CableTool15 - CT006 P4A Three-Conductor Comparison");
+
+  Message_Box message = Create_message_box(
+    "Select three corresponding conductor strings, enter design sags/tolerance, then Compare.");
+
+  Vertical_Group group_a = Create_vertical_group(0);
+  Set_border(group_a,"Conductor A");
+  Select_Box select_a = Create_select_box(
+    "&Survey String A",
+    "Pick first conductor string",
+    SELECT_STRING,
+    message);
+  Append(select_a,group_a);
+
+  Vertical_Group group_b = Create_vertical_group(0);
+  Set_border(group_b,"Conductor B");
+  Select_Box select_b = Create_select_box(
+    "&Survey String B",
+    "Pick second conductor string",
+    SELECT_STRING,
+    message);
+  Append(select_b,group_b);
+
+  Vertical_Group group_c = Create_vertical_group(0);
+  Set_border(group_c,"Conductor C");
+  Select_Box select_c = Create_select_box(
+    "&Survey String C",
+    "Pick third conductor string",
+    SELECT_STRING,
+    message);
+  Append(select_c,group_c);
+
+  Vertical_Group validation_group = Create_vertical_group(0);
+  Set_border(validation_group,"Design / Tolerance");
+
+  Real_Box design_a_box =
+    Create_real_box("Design Sag A (m, 0 = unknown)",message);
+  Set_data(design_a_box,0.0);
+
+  Real_Box design_b_box =
+    Create_real_box("Design Sag B (m, 0 = unknown)",message);
+  Set_data(design_b_box,0.0);
+
+  Real_Box design_c_box =
+    Create_real_box("Design Sag C (m, 0 = unknown)",message);
+  Set_data(design_c_box,0.0);
+
+  Real_Box tolerance_box =
+    Create_real_box("Tolerance +/- (m, 0 = none)",message);
+  Set_data(tolerance_box,0.150);
+
+  File_Box report_box =
+    Create_file_box("Report File Name",message,CHECK_FILE_CREATE,"*.rpt");
+  Set_data(report_box,"CableTool15_CT006_P4A_ThreeConductor.rpt");
+
+  Append(design_a_box,validation_group);
+  Append(design_b_box,validation_group);
+  Append(design_c_box,validation_group);
+  Append(tolerance_box,validation_group);
+  Append(report_box,validation_group);
+
+  Horizontal_Group button_group = Create_button_group();
+  Set_border(button_group,"Processing");
+
+  Button compare_button = Create_button("&Compare 3 Conductors","compare");
+  Button finish_button = Create_button("&Finish","finish");
+
+  Append(compare_button,button_group);
+  Append(finish_button,button_group);
+
+  Append(group_a,panel);
+  Append(group_b,panel);
+  Append(group_c,panel);
+  Append(validation_group,panel);
+  Append(message,panel);
+  Append(button_group,panel);
+
+  Show_widget(panel);
+
+  Integer running = TRUE;
+
+  while(running) {
+    Integer id;
+    Text cmd;
+    Text msg;
+
+    Integer ret = Wait_on_widgets(id,cmd,msg);
+    if(cmd == "keystroke") continue;
+
+    switch(id) {
+      case Get_id(panel) : {
+        if(cmd == "Panel Quit") running = FALSE;
+      } break;
+
+      case Get_id(finish_button) : {
+        if(cmd == "finish") running = FALSE;
+      } break;
+
+      case Get_id(compare_button) : {
+        Element string_a;
+        Element string_b;
+        Element string_c;
+
+        Integer ierr_a = Validate(select_a,string_a);
+        if(ierr_a != TRUE) {
+          Set_data(message,"Please select Survey String A.");
+          break;
+        }
+
+        Integer ierr_b = Validate(select_b,string_b);
+        if(ierr_b != TRUE) {
+          Set_data(message,"Please select Survey String B.");
+          break;
+        }
+
+        Integer ierr_c = Validate(select_c,string_c);
+        if(ierr_c != TRUE) {
+          Set_data(message,"Please select Survey String C.");
+          break;
+        }
+
+        Real design_sag_a;
+        Integer ierr_da = Validate(design_a_box,design_sag_a);
+        if(ierr_da != TRUE) {
+          Set_data(message,"Please enter a valid Design Sag A (use 0 if unknown).");
+          break;
+        }
+
+        Real design_sag_b;
+        Integer ierr_db = Validate(design_b_box,design_sag_b);
+        if(ierr_db != TRUE) {
+          Set_data(message,"Please enter a valid Design Sag B (use 0 if unknown).");
+          break;
+        }
+
+        Real design_sag_c;
+        Integer ierr_dc = Validate(design_c_box,design_sag_c);
+        if(ierr_dc != TRUE) {
+          Set_data(message,"Please enter a valid Design Sag C (use 0 if unknown).");
+          break;
+        }
+
+        Real tolerance;
+        Integer ierr_tol = Validate(tolerance_box,tolerance);
+        if(ierr_tol != TRUE || tolerance < 0.0) {
+          Set_data(message,"Please enter a valid non-negative tolerance.");
+          break;
+        }
+
+        Text report_name;
+        Integer report_get = Get_data(report_box,report_name);
+        if(report_get != 0 || report_name == "") {
+          Set_data(message,"Please enter a report file name.");
+          break;
+        }
+
+        CT006_compare_three_strings(
+          string_a,
+          string_b,
+          string_c,
+          message,
+          report_name,
+          design_sag_a,
+          design_sag_b,
+          design_sag_c,
+          tolerance);
+      } break;
+    }
+  }
+}
+
+void main()
+{
+  CT006_manage_panel();
+}
